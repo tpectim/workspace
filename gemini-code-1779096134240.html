@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自訂分割網頁工作區</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #1e1e1e;
+            color: #fff;
+            overflow: hidden;
+        }
+
+        /* 控制面板 */
+        .control-panel {
+            padding: 12px 20px;
+            background-color: #2d2d2d;
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+        .control-panel label {
+            font-size: 14px;
+        }
+        .control-panel input[type="number"] {
+            width: 60px;
+            padding: 6px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #444;
+            color: #fff;
+            text-align: center;
+        }
+        .btn {
+            padding: 6px 14px;
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        .btn:hover { background-color: #005f9e; }
+        .btn-green { background-color: #1a7f37; }
+        .btn-green:hover { background-color: #14612a; }
+        .btn-orange { background-color: #d16900; }
+        .btn-orange:hover { background-color: #a85400; }
+
+        /* 網格容器 */
+        .grid-container {
+            flex-grow: 1;
+            display: grid;
+            background-color: #111;
+            /* 讓 Grid 可以填滿剩餘空間，但不超出版面 */
+            width: 100%;
+            height: 100%;
+        }
+
+        /* 拖曳間距分隔線 */
+        .resizer {
+            background-color: #333;
+            transition: background-color 0.2s;
+            z-index: 5;
+        }
+        .resizer:hover, .resizer:active {
+            background-color: #007acc;
+        }
+        .resizer-v {
+            cursor: col-resize;
+            width: 6px; /* 垂直分隔線寬度 */
+        }
+        .resizer-h {
+            cursor: row-resize;
+            height: 6px; /* 水平分隔線高度 */
+        }
+
+        /* 視窗樣式 */
+        .window-box {
+            background-color: #252526;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-width: 50px;
+            min-height: 50px;
+        }
+        .window-header {
+            background-color: #333;
+            padding: 6px 8px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .url-input {
+            flex-grow: 1;
+            padding: 4px 8px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background-color: #1e1e1e;
+            color: #fff;
+            font-size: 12px;
+            min-width: 50px;
+        }
+        .url-input:focus { outline: 1px solid #007acc; }
+        .window-content {
+            flex-grow: 1;
+            width: 100%;
+            height: 100%;
+            border: none;
+            background-color: #fff;
+        }
+
+        /* 彈窗樣式 (Modal) */
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-box {
+            background: #252526;
+            border: 1px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            width: 500px;
+            max-width: 90%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+        .modal-box h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .modal-box textarea {
+            width: 100%;
+            height: 150px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #555;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        .file-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #333;
+            padding: 10px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 控制面板 -->
+    <div class="control-panel">
+        <label>列 (Row): <input type="number" id="grid-rows" value="2" min="1" max="10"></label>
+        <label>行 (Col): <input type="number" id="grid-cols" value="2" min="1" max="10"></label>
+        <button class="btn" onclick="generateFromInputs()">產生版面</button>
+        <div style="flex-grow: 1;"></div>
+        <button class="btn btn-green" onclick="showExportModal()">匯出設定</button>
+        <button class="btn btn-orange" onclick="showImportModal()">匯入設定</button>
+    </div>
+
+    <!-- 網格主體 -->
+    <div class="grid-container" id="gridContainer"></div>
+
+    <!-- 匯出 Modal -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="modal-box">
+            <h3>匯出設定 (JSON)</h3>
+            <textarea id="export-json" readonly></textarea>
+            <div class="modal-actions">
+                <button class="btn" onclick="copyExport()">全部複製</button>
+                <button class="btn btn-green" onclick="downloadExport()">下載檔案</button>
+                <button class="btn" style="background:#555;" onclick="hideModal('export-modal')">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 匯入 Modal -->
+    <div class="modal-overlay" id="import-modal">
+        <div class="modal-box">
+            <h3>匯入設定</h3>
+            <div class="file-input-wrapper">
+                <label>從檔案讀取:</label>
+                <input type="file" id="import-file" accept=".json">
+            </div>
+            <p style="font-size: 12px; color:#aaa; margin: 5px 0 0 0;">或直接貼上 JSON 文字：</p>
+            <textarea id="import-json" placeholder="在此貼上 JSON 格式內容..."></textarea>
+            <div class="modal-actions">
+                <button class="btn btn-orange" onclick="importConfigAction()">載入設定</button>
+                <button class="btn" style="background:#555;" onclick="hideModal('import-modal')">關閉</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentRows = 2;
+        let currentCols = 2;
+        const RESIZER_SIZE = 6; // 分隔線像素粗細
+
+        // 頁面載入初始化
+        window.onload = () => renderGrid(2, 2);
+
+        // 根據輸入框產生新版面
+        function generateFromInputs() {
+            const r = parseInt(document.getElementById('grid-rows').value) || 2;
+            const c = parseInt(document.getElementById('grid-cols').value) || 2;
+            renderGrid(r, c);
+        }
+
+        // 核心：繪製網格與視窗
+        function renderGrid(r, c, urls = [], colSizesStr = '', rowSizesStr = '') {
+            currentRows = r;
+            currentCols = c;
+            const container = document.getElementById('gridContainer');
+            container.innerHTML = '';
+            
+            // 建立預設的 Grid Template (混和比例與固定的分隔線寬度)
+            let colSizes = colSizesStr || Array(c).fill('1fr').join(` ${RESIZER_SIZE}px `);
+            let rowSizes = rowSizesStr || Array(r).fill('1fr').join(` ${RESIZER_SIZE}px `);
+            
+            container.style.gridTemplateColumns = colSizes;
+            container.style.gridTemplateRows = rowSizes;
+
+            let winIndex = 0;
+            
+            // 生成網頁視窗
+            for (let i = 0; i < r; i++) {
+                for (let j = 0; j < c; j++) {
+                    const winBox = document.createElement('div');
+                    winBox.className = 'window-box';
+                    // Grid 的列與行，索引基於 1，且要跳過分隔線 (所以 * 2)
+                    winBox.style.gridRow = `${i * 2 + 1}`;
+                    winBox.style.gridColumn = `${j * 2 + 1}`;
+                    
+                    const header = document.createElement('div');
+                    header.className = 'window-header';
+                    
+                    const urlInput = document.createElement('input');
+                    urlInput.type = 'text';
+                    urlInput.className = 'url-input';
+                    urlInput.placeholder = '輸入網址';
+                    urlInput.id = `input-${winIndex}`;
+                    urlInput.value = urls[winIndex] || '';
+                    
+                    urlInput.addEventListener('keypress', (e) => {
+                        if (e.key === 'Enter') navigate(e.target.id.split('-')[1]);
+                    });
+
+                    const goBtn = document.createElement('button');
+                    goBtn.className = 'btn';
+                    goBtn.innerText = '前往';
+                    goBtn.dataset.idx = winIndex;
+                    goBtn.onclick = function() { navigate(this.dataset.idx); };
+
+                    header.appendChild(urlInput);
+                    header.appendChild(goBtn);
+
+                    const iframe = document.createElement('iframe');
+                    iframe.className = 'window-content';
+                    iframe.id = `iframe-${winIndex}`;
+                    
+                    if (urls[winIndex]) {
+                        iframe.src = formatUrl(urls[winIndex]);
+                    } else {
+                        iframe.src = 'about:blank';
+                    }
+
+                    winBox.appendChild(header);
+                    winBox.appendChild(iframe);
+                    container.appendChild(winBox);
+                    
+                    winIndex++;
+                }
+            }
+
+            // 生成垂直分隔線 (負責左右縮放)
+            for (let j = 0; j < c - 1; j++) {
+                const resizerV = document.createElement('div');
+                resizerV.className = 'resizer resizer-v';
+                resizerV.style.gridRow = '1 / -1'; // 跨越所有行
+                resizerV.style.gridColumn = `${j * 2 + 2}`;
+                resizerV.addEventListener('mousedown', (e) => initResize(e, 'v', j));
+                container.appendChild(resizerV);
+            }
+
+            // 生成水平分隔線 (負責上下縮放)
+            for (let i = 0; i < r - 1; i++) {
+                const resizerH = document.createElement('div');
+                resizerH.className = 'resizer resizer-h';
+                resizerH.style.gridColumn = '1 / -1'; // 跨越所有列
+                resizerH.style.gridRow = `${i * 2 + 2}`;
+                resizerH.addEventListener('mousedown', (e) => initResize(e, 'h', i));
+                container.appendChild(resizerH);
+            }
+        }
+
+        // 導向網址功能
+        function navigate(index) {
+            const input = document.getElementById(`input-${index}`);
+            const iframe = document.getElementById(`iframe-${index}`);
+            let url = input.value.trim();
+            if (url) {
+                iframe.src = formatUrl(url);
+            }
+        }
+
+        function formatUrl(url) {
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                return 'https://' + url;
+            }
+            return url;
+        }
+
+        // --- 拖曳縮放邏輯 (Grid Resize Logic) ---
+        function initResize(e, type, index) {
+            e.preventDefault();
+            const container = document.getElementById('gridContainer');
+            const isVert = type === 'v';
+            const startPos = isVert ? e.clientX : e.clientY;
+            
+            // 取得當前的網格分配像素 (解析 getComputedStyle)
+            const computedStyle = window.getComputedStyle(container);
+            let tracksStr = isVert ? computedStyle.gridTemplateColumns : computedStyle.gridTemplateRows;
+            let tracks = tracksStr.split(' ');
+            
+            // 確認我們要改變的前後兩個 Grid 區塊索引
+            const prevTrackIdx = index * 2;
+            const nextTrackIdx = index * 2 + 2;
+            let prevSize = parseFloat(tracks[prevTrackIdx]);
+            let nextSize = parseFloat(tracks[nextTrackIdx]);
+
+            // 在拖曳過程中，封鎖 iframe 的指標事件，避免游標卡彈
+            const iframes = document.querySelectorAll('.window-content');
+            iframes.forEach(iframe => iframe.style.pointerEvents = 'none');
+
+            function onMouseMove(moveEvent) {
+                const currentPos = isVert ? moveEvent.clientX : moveEvent.clientY;
+                const delta = currentPos - startPos;
+                
+                let newPrev = prevSize + delta;
+                let newNext = nextSize - delta;
+
+                // 最小尺寸限制
+                if (newPrev < 50 || newNext < 50) return;
+
+                tracks[prevTrackIdx] = `${newPrev}px`;
+                tracks[nextTrackIdx] = `${newNext}px`;
+
+                if (isVert) {
+                    container.style.gridTemplateColumns = tracks.join(' ');
+                } else {
+                    container.style.gridTemplateRows = tracks.join(' ');
+                }
+            }
+
+            function onMouseUp() {
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                
+                // 恢復 iframe 指標事件
+                iframes.forEach(iframe => iframe.style.pointerEvents = 'auto');
+                
+                // 將像素轉回百分比，確保視窗放大縮小時比例不會壞掉
+                convertToPercentages(type);
+            }
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        }
+
+        // 將拖曳完畢的 px 轉回 %，維持響應式 (RWD) 結構
+        function convertToPercentages(type) {
+             const container = document.getElementById('gridContainer');
+             const computedStyle = window.getComputedStyle(container);
+             let tracks = type === 'v' ? computedStyle.gridTemplateColumns.split(' ') : computedStyle.gridTemplateRows.split(' ');
+             
+             let totalSize = 0;
+             let sizes = [];
+             for(let i = 0; i < tracks.length; i += 2) {
+                 let size = parseFloat(tracks[i]);
+                 sizes.push(size);
+                 totalSize += size;
+             }
+             
+             let percentages = sizes.map(s => `${(s / totalSize) * 100}%`);
+             if (type === 'v') {
+                 container.style.gridTemplateColumns = percentages.join(` ${RESIZER_SIZE}px `);
+             } else {
+                 container.style.gridTemplateRows = percentages.join(` ${RESIZER_SIZE}px `);
+             }
+        }
+
+        // --- 匯出 / 匯入邏輯 (JSON Export/Import) ---
+        function showExportModal() {
+            const urls = [];
+            const total = currentRows * currentCols;
+            for (let i = 0; i < total; i++) {
+                const input = document.getElementById(`input-${i}`);
+                urls.push(input ? input.value : '');
+            }
+            const config = {
+                rows: currentRows,
+                cols: currentCols,
+                colSizesStr: document.getElementById('gridContainer').style.gridTemplateColumns,
+                rowSizesStr: document.getElementById('gridContainer').style.gridTemplateRows,
+                urls: urls
+            };
+            
+            document.getElementById('export-json').value = JSON.stringify(config, null, 2);
+            document.getElementById('export-modal').style.display = 'flex';
+        }
+
+        function copyExport() {
+            const text = document.getElementById('export-json').value;
+            navigator.clipboard.writeText(text).then(() => alert('已複製到剪貼簿！'));
+        }
+
+        function downloadExport() {
+            const text = document.getElementById('export-json').value;
+            const blob = new Blob([text], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'workspace-config.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showImportModal() {
+            document.getElementById('import-json').value = '';
+            document.getElementById('import-file').value = '';
+            document.getElementById('import-modal').style.display = 'flex';
+        }
+
+        function hideModal(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        // 處理上傳檔案自動讀取文字
+        document.getElementById('import-file').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                document.getElementById('import-json').value = evt.target.result;
+            };
+            reader.readAsText(file);
+        });
+
+        // 執行匯入
+        function importConfigAction() {
+            const text = document.getElementById('import-json').value;
+            if (!text.trim()) {
+                alert('請先貼上 JSON 或選擇檔案');
+                return;
+            }
+            try {
+                const config = JSON.parse(text);
+                if (config.rows && config.cols) {
+                    document.getElementById('grid-rows').value = config.rows;
+                    document.getElementById('grid-cols').value = config.cols;
+                    
+                    // 執行渲染並載入舊的尺寸分配與網址
+                    renderGrid(config.rows, config.cols, config.urls || [], config.colSizesStr || '', config.rowSizesStr || '');
+                    hideModal('import-modal');
+                } else {
+                    alert('無效的設定檔格式，缺少 rows 或 cols 屬性');
+                }
+            } catch (e) {
+                alert('JSON 解析失敗，請檢查內容格式是否正確');
+            }
+        }
+    </script>
+</body>
+</html>
